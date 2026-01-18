@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "./api.js";
 
 export default function ServiceInvoker() {
     const [aluno, setAluno] = useState(null);
@@ -16,23 +17,26 @@ export default function ServiceInvoker() {
 
     const [erro, setErro] = useState("");
 
-    // carregar aluno 1 ao abrir
+    // 🔐 carregar aluno autenticado (via JWT)
     useEffect(() => {
-        fetch("/api/alunos/1")
-            .then((r) => r.json())
+        apiFetch("/api/alunos/me")
+            .then((r) => {
+                if (!r.ok) throw new Error("Não autorizado");
+                return r.json();
+            })
             .then(setAluno)
-            .catch((err) => setErro("Erro a carregar aluno: " + err));
+            .catch(() => setErro("Erro ao carregar aluno autenticado"));
     }, []);
 
     const loadUCs = async () => {
         setErro("");
-        const r = await fetch("/api/ucs");
+        const r = await apiFetch("/api/ucs");
         const data = await r.json();
         setUcs(data);
     };
 
     const listarExerciciosDaUC = async (ucId) => {
-        const r = await fetch(`/api/exercicios/uc/${ucId}`);
+        const r = await apiFetch(`/api/exercicios/uc/${ucId}`);
         const data = await r.json();
         setExercicios(data);
     };
@@ -40,8 +44,6 @@ export default function ServiceInvoker() {
     const selecionarUC = async (uc) => {
         setErro("");
         setUcSelecionada(uc);
-
-        // limpar seleção anterior
         setExSelecionado(null);
         setFases([]);
         setParticipacao(null);
@@ -52,101 +54,99 @@ export default function ServiceInvoker() {
     const criarExercicio = async () => {
         setErro("");
         if (!ucSelecionada) return setErro("Seleciona uma UC primeiro.");
-        if (!tituloExercicio.trim()) return setErro("Escreve um título para o exercício.");
+        if (!tituloExercicio.trim()) return setErro("Escreve um título.");
 
-        const r = await fetch("/api/exercicios", {
+        const r = await apiFetch("/api/exercicios", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ucId: ucSelecionada.id, titulo: tituloExercicio }),
+            body: JSON.stringify({
+                ucId: ucSelecionada.id,
+                titulo: tituloExercicio,
+            }),
         });
 
-        if (!r.ok) return setErro("Erro a criar exercício.");
+        if (!r.ok) return setErro("Erro ao criar exercício.");
+
         setTituloExercicio("");
-        await listarExerciciosDaUC(ucSelecionada.id); // requisito (3): aparece logo
+        await listarExerciciosDaUC(ucSelecionada.id);
     };
 
     const carregarFasesDoExercicio = async (exercicioId) => {
-        const r = await fetch(`/api/fases/exercicio/${exercicioId}`);
+        const r = await apiFetch(`/api/fases/exercicio/${exercicioId}`);
         if (!r.ok) {
             setFases([]);
             return;
         }
-        const data = await r.json();
-        setFases(data);
+        setFases(await r.json());
     };
 
-    // “Entrar no exercício” => cria participação
+    // 🎓 entrar no exercício (cria participação)
     const entrarNoExercicio = async (ex) => {
         setErro("");
-        if (!aluno) return setErro("Aluno ainda não carregou.");
+        if (!aluno) return setErro("Aluno não carregado.");
 
         setExSelecionado(ex);
         setParticipacao(null);
         setFases([]);
 
-        // 1) carregar fases
         await carregarFasesDoExercicio(ex.id);
 
-        // 2) criar participação
-        const r = await fetch("/api/participacoes", {
+        const r = await apiFetch("/api/participacoes", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ alunoId: aluno.id, exercicioId: ex.id }),
+            body: JSON.stringify({
+                alunoId: aluno.id,
+                exercicioId: ex.id,
+            }),
         });
 
-        // Se der erro (duplicado ou outro), mostramos a mensagem
         if (!r.ok) {
-            // tenta ler texto/JSON do erro (depende do teu backend)
-            setErro("Não foi possível criar participação (talvez já exista).");
+            const msg = await r.text();
+            setErro(msg || "Erro ao criar participação.");
             return;
         }
 
-        const data = await r.json();
-        setParticipacao(data);
+        setParticipacao(await r.json());
     };
 
     const concluirFase = async (faseId) => {
         setErro("");
-        if (!participacao) return setErro("Não existe participação. Entra no exercício primeiro.");
+        if (!participacao) return;
 
-        const r = await fetch(
+        const r = await apiFetch(
             `/api/participacoes/${participacao.id}/fase/${faseId}/concluir`,
             { method: "POST" }
         );
 
         if (!r.ok) return setErro("Erro ao concluir fase.");
 
-        // atualizar localmente: acrescentar faseId às fasesCompletas
-        setParticipacao((p) => {
-            const atual = p?.fasesCompletas ?? [];
-            if (atual.includes(faseId)) return p;
-            return { ...p, fasesCompletas: [...atual, faseId] };
-        });
+        setParticipacao((p) => ({
+            ...p,
+            fasesCompletas: [...(p.fasesCompletas ?? []), faseId],
+        }));
     };
 
     const chamarDocente = async () => {
         setErro("");
-        if (!participacao) return setErro("Não existe participação. Entra no exercício primeiro.");
+        if (!participacao) return;
 
-        const r = await fetch(`/api/participacoes/${participacao.id}/chamar-docente`, {
-            method: "POST",
-        });
+        const r = await apiFetch(
+            `/api/participacoes/${participacao.id}/chamar-docente`,
+            { method: "POST" }
+        );
 
         if (!r.ok) return setErro("Erro ao chamar docente.");
 
         setParticipacao((p) => ({ ...p, chamado: true }));
     };
 
-    const faseConcluida = (faseId) => {
-        return (participacao?.fasesCompletas ?? []).includes(faseId);
-    };
+    const faseConcluida = (faseId) =>
+        (participacao?.fasesCompletas ?? []).includes(faseId);
 
     return (
         <div style={{ padding: 20 }}>
-            <h2>Checkpoint System (Teste)</h2>
+            <h2>Checkpoint System</h2>
 
             {erro && (
-                <div style={{ padding: 10, marginBottom: 10, border: "1px solid red" }}>
+                <div style={{ border: "1px solid red", padding: 10 }}>
                     {erro}
                 </div>
             )}
@@ -163,100 +163,55 @@ export default function ServiceInvoker() {
                 <div>A carregar aluno...</div>
             )}
 
-            {/* --- UCs ---------------------------------------------------- */}
             <h3>UCs</h3>
-
             <ul className="uc-list">
                 {ucs.map((uc) => (
-                    <li
-                        key={uc.id}
-                        className={ucSelecionada?.id === uc.id ? "uc-selected" : ""}
-                    >
-                        {uc.nome} (id={uc.id})
-
-                        <button onClick={() => selecionarUC(uc)}>
-                            Selecionar
-                        </button>
-
-                        <button
-                            onClick={() => criarExercicio(uc.id, "Exercício 1")}
-                            disabled={ucSelecionada?.id !== uc.id}
-                        >
-                            Criar Exercício
-                        </button>
+                    <li key={uc.id}>
+                        {uc.nome}
+                        <button onClick={() => selecionarUC(uc)}>Selecionar</button>
                     </li>
-
                 ))}
             </ul>
 
+            <h3>Criar Exercício</h3>
+            <input
+                value={tituloExercicio}
+                onChange={(e) => setTituloExercicio(e.target.value)}
+            />
+            <button onClick={criarExercicio}>Criar</button>
 
-            <h3>Criar Exercício (Docente) a partir da UC</h3>
-            <div>
-                <div>
-                    UC selecionada:{" "}
-                    {ucSelecionada ? `${ucSelecionada.nome} (id=${ucSelecionada.id})` : "nenhuma"}
-                </div>
-                <input
-                    placeholder="Título do exercício..."
-                    value={tituloExercicio}
-                    onChange={(e) => setTituloExercicio(e.target.value)}
-                />
-                <button onClick={criarExercicio}>Criar</button>
-            </div>
-
-            <h3>Exercícios da UC</h3>
+            <h3>Exercícios</h3>
             <ul>
                 {exercicios.map((e) => (
                     <li key={e.id}>
-                        {e.titulo} (id={e.id}){" "}
-                        <button onClick={() => entrarNoExercicio(e)}>Entrar (Aluno)</button>
+                        {e.titulo}
+                        <button onClick={() => entrarNoExercicio(e)}>Entrar</button>
                     </li>
                 ))}
             </ul>
 
-            <hr />
+            {exSelecionado && (
+                <>
+                    <h3>Fases</h3>
+                    <ol>
+                        {fases.map((f) => (
+                            <li key={f.id}>
+                                {f.titulo}
+                                {faseConcluida(f.id) ? " ✅" : (
+                                    <button onClick={() => concluirFase(f.id)}>
+                                        Concluir
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ol>
 
-            <h3>Exercício selecionado</h3>
-            {exSelecionado ? (
-                <div>
-                    <div>
-                        <b>{exSelecionado.titulo}</b> (id={exSelecionado.id})
-                    </div>
-
-                    <h4>Participação</h4>
-                    {participacao ? (
-                        <div>
-                            <div>participacaoId: {participacao.id}</div>
-                            <div>chamado: {String(participacao.chamado)}</div>
-                            <div>terminado: {String(participacao.terminado)}</div>
-                            <div>fasesCompletas: {(participacao.fasesCompletas ?? []).join(", ")}</div>
-
-                            <button onClick={chamarDocente}>Chamar Docente</button>
-                        </div>
-                    ) : (
-                        <div>Participação ainda não criada (ou falhou).</div>
+                    {participacao && (
+                        <button onClick={chamarDocente}>
+                            Chamar Docente
+                        </button>
                     )}
-
-                    <h4>Fases</h4>
-                    {fases.length === 0 ? (
-                        <div>Este exercício ainda não tem fases.</div>
-                    ) : (
-                        <ol>
-                            {fases.map((f) => (
-                                <li key={f.id}>
-                                    <b>[{f.ordem}]</b> {f.titulo}{" "}
-                                    {faseConcluida(f.id) ? (
-                                        <span>✅ Concluída</span>
-                                    ) : (
-                                        <button onClick={() => concluirFase(f.id)}>Concluir fase</button>
-                                    )}
-                                </li>
-                            ))}
-                        </ol>
-                    )}
-                </div>
-            ) : (
-                <div>Nenhum exercício selecionado.</div>
+                </>
             )}
         </div>
     );
