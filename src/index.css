@@ -24,14 +24,12 @@ a:hover {
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
   min-width: 320px;
-  min-height: 100vh;
-  background-color: #ffffff; /* redundante, mas garantido */
+  background-color: #ffffff;
   color: #213547;
-  justify-content: center;
+  font-family: system-ui, sans-serif;
 }
+
 
 h1 {
   font-size: 3.2em;

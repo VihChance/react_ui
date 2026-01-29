@@ -1,43 +1,60 @@
-import './App.css';
-import { useState } from "react";
-import AlunoPage from "./AlunoPage.jsx";
-import DocentePage from "./DocentePage.jsx";
-import Login from './autenticar/Login.jsx';
+import { Routes, Route, Navigate } from "react-router-dom";
+import { Container, Navbar, Nav, Button } from "react-bootstrap";
+import { useAuth } from "./auth/AuthContext";
+import Login from "./pages/Login";
+import AlunoPage from "./pages/AlunoPage";
+import DocentePage from "./pages/DocentePage";
 
 export default function App() {
+    const { token, role, logout } = useAuth();
 
-    const [autenticado, setAutenticado] = useState(
-        !!localStorage.getItem("token")
-    );
-
-    const [role, setRole] = useState(localStorage.getItem("role"));
-
-    const logout = () => {
-        localStorage.removeItem("token");
-        localStorage.removeItem("role");
-        setAutenticado(false);
-        setRole(null);
-    };
-
-    const handleLoginSuccess = () => {
-        setAutenticado(true);
-        setRole(localStorage.getItem("role")); // <- garante que atualiza a role
+    const RotaPrivada = ({ children, roleEsperado }) => {
+        if (!token) return <Navigate to="/" />;
+        if (role !== roleEsperado) return <Navigate to="/" />;
+        return children;
     };
 
     return (
-        <div className="app-container">
-            <h1>Checkpoint System</h1>
+        <>
+            <Navbar bg="dark" variant="dark" expand="lg">
+                <Container>
+                    <Navbar.Brand>Checkpoint System</Navbar.Brand>
+                    {token && (
+                        <Nav className="ms-auto">
+                            <Button variant="outline-light" onClick={logout}>
+                                Sair
+                            </Button>
+                        </Nav>
+                    )}
+                </Container>
+            </Navbar>
 
-            {autenticado ? (
-                <>
-                    <button onClick={logout}>Sair</button>
+            <Container className="mt-4">
+                <Routes>
+                    <Route path="/" element={<Login />} />
 
-                    {role === "ALUNO" && <AlunoPage />}
-                    {role === "DOCENTE" && <DocentePage />}
-                </>
-            ) : (
-                <Login onLoginSuccess={handleLoginSuccess} />
-            )}
-        </div>
+                    <Route
+                        path="/aluno"
+                        element={
+                            <RotaPrivada roleEsperado="ALUNO">
+                                <AlunoPage />
+                            </RotaPrivada>
+                        }
+                    />
+
+                    <Route
+                        path="/docente"
+                        element={
+                            <RotaPrivada roleEsperado="DOCENTE">
+                                <DocentePage />
+                            </RotaPrivada>
+                        }
+                    />
+
+                    {/* Fallback: se não encontrar rota, redireciona para / */}
+                    <Route path="*" element={<Navigate to="/" />} />
+                </Routes>
+            </Container>
+        </>
     );
 }
