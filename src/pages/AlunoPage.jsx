@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
 import { Container, Row, Col, Card, Button, ListGroup, Alert } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
 
 export default function AlunoPage() {
     const [aluno, setAluno] = useState(null);
@@ -10,13 +11,20 @@ export default function AlunoPage() {
     const [exSelecionado, setExSelecionado] = useState(null);
     const [fases, setFases] = useState([]);
     const [participacao, setParticipacao] = useState(null);
+    const [participacoes, setParticipacoes] = useState([]);
     const [erro, setErro] = useState("");
+    const navigate = useNavigate();
 
     useEffect(() => {
         apiFetch("/api/alunos/me")
             .then((r) => r.json())
-            .then(setAluno)
-            .catch(() => setErro("Erro ao carregar aluno"));
+            .then((dadosAluno) => {
+                setAluno(dadosAluno);
+                return apiFetch(`/api/participacoes/aluno/${dadosAluno.id}`);
+            })
+            .then((r) => r.json())
+            .then(setParticipacoes)
+            .catch(() => setErro("Erro ao carregar aluno ou participações"));
 
         apiFetch("/api/ucs/todas")
             .then((r) => r.json())
@@ -35,48 +43,78 @@ export default function AlunoPage() {
         setExercicios(await r.json());
     };
 
-    const entrarNoExercicio = async (ex) => {
-        setErro("");
-        setExSelecionado(ex);
-        setFases([]);
-        setParticipacao(null);
-
-        const fasesResp = await apiFetch(`/api/fases/exercicio/${ex.id}`);
-        setFases(await fasesResp.json());
-
-        const r = await apiFetch("/api/participacoes", {
-            method: "POST",
-            body: JSON.stringify({ alunoId: aluno.id, exercicioId: ex.id }),
-        });
-
-        if (!r.ok) {
-            if (r.status === 409) {
-                // Já existe participação — tentar buscar
-                const lista = await apiFetch(`/api/participacoes/aluno/${aluno.id}`);
-                const participacaoExistente = (await lista.json())
-                    .find((p) => p?.exercicio?.id === ex.id);
-                if (participacaoExistente) {
-                    setParticipacao(participacaoExistente);
-                    return;
-                }
-            }
-            const msg = await r.text();
-            setErro(msg || "Erro ao entrar no exercício.");
-            return;
+    // IDs de exercícios que já têm participação (string para evitar number vs string)
+    const iniciadosIds = useMemo(() => {
+        const ids = new Set();
+        for (const p of participacoes || []) {
+            const id = p?.exercicio?.id ?? p?.exercicioId; // cobre dois formatos
+            if (id != null) ids.add(String(id));
         }
+        return ids;
+    }, [participacoes]);
 
-        setParticipacao(await r.json());
+    const entrarNoExercicio = async (ex) => {
+        try {
+            setErro("");
+            setExSelecionado(ex);
+            setFases([]);
+            setParticipacao(null);
+
+            const fasesResp = await apiFetch(`/api/fases/exercicio/${ex.id}`);
+            setFases(await fasesResp.json());
+
+            const r = await apiFetch("/api/participacoes", {
+                method: "POST",
+                body: JSON.stringify({ alunoId: aluno.id, exercicioId: ex.id }),
+            });
+
+            // Se já existe, buscar e usar a existente
+            if (!r.ok) {
+                if (r.status === 409) {
+                    const lista = await apiFetch(`/api/participacoes/aluno/${aluno.id}`);
+                    const todas = await lista.json();
+                    const existente = todas.find(
+                        (p) => String(p?.exercicio?.id ?? p?.exercicioId) === String(ex.id)
+                    );
+                    if (existente) {
+                        setParticipacao(existente);
+                        // 🔁 garante estado visual correto:
+                        setParticipacoes((prev) => {
+                            const jaTem = prev.some(
+                                (p) => String(p?.exercicio?.id ?? p?.exercicioId) === String(ex.id)
+                            );
+                            return jaTem ? prev : [...prev, existente];
+                        });
+                        return;
+                    }
+                }
+                const msg = await r.text();
+                setErro(msg || "Erro ao entrar no exercício.");
+                return;
+            }
+
+            const nova = await r.json();
+            setParticipacao(nova);
+            // ✅ adiciona a nova participação à lista para atualizar as listas
+            setParticipacoes((prev) => {
+                const jaTem = prev.some(
+                    (p) =>
+                        String(p?.exercicio?.id ?? p?.exercicioId) ===
+                        String(nova?.exercicio?.id ?? nova?.exercicioId)
+                );
+                return jaTem ? prev : [...prev, nova];
+            });
+        } catch {
+            setErro("Erro ao entrar no exercício.");
+        }
     };
-
 
     const concluirFase = async (faseId) => {
         const r = await apiFetch(
             `/api/participacoes/${participacao.id}/fase/${faseId}/concluir`,
             { method: "POST" }
         );
-
         if (!r.ok) return setErro("Erro ao concluir fase");
-
         setParticipacao((p) => ({
             ...p,
             fasesCompletas: [...(p?.fasesCompletas ?? []), faseId],
@@ -88,9 +126,7 @@ export default function AlunoPage() {
             `/api/participacoes/${participacao.id}/chamar-docente`,
             { method: "POST" }
         );
-
         if (!r.ok) return setErro("Erro ao chamar docente");
-
         setParticipacao((p) => ({ ...p, chamado: true }));
     };
 
@@ -131,19 +167,45 @@ export default function AlunoPage() {
                         <Card className="mb-4">
                             <Card.Body>
                                 <Card.Title>Exercícios de {ucSelecionada.nome}</Card.Title>
-                                <ListGroup>
-                                    {exercicios.map((e) => (
-                                        <ListGroup.Item key={e.id}>
-                                            {e.titulo}
-                                            <Button
-                                                size="sm"
-                                                className="float-end"
-                                                onClick={() => entrarNoExercicio(e)}
+
+                                <h6 className="mt-3">Já iniciados:</h6>
+                                <ListGroup className="mb-4">
+                                    {exercicios
+                                        .filter((ex) => iniciadosIds.has(String(ex.id)))
+                                        .map((ex) => (
+                                            <ListGroup.Item
+                                                key={ex.id}
+                                                className="d-flex justify-content-between align-items-center"
                                             >
-                                                Entrar
-                                            </Button>
-                                        </ListGroup.Item>
-                                    ))}
+                                                <strong>{ex.titulo}</strong>
+                                                <Button
+                                                    variant="secondary"
+                                                    onClick={() => navigate(`/exercicios/${ex.id}`)}
+                                                >
+                                                    Ver
+                                                </Button>
+                                            </ListGroup.Item>
+                                        ))}
+                                </ListGroup>
+
+                                <h6 className="mt-3">Ainda não iniciados:</h6>
+                                <ListGroup>
+                                    {exercicios
+                                        .filter((ex) => !iniciadosIds.has(String(ex.id)))
+                                        .map((ex) => (
+                                            <ListGroup.Item
+                                                key={ex.id}
+                                                className="d-flex justify-content-between align-items-center"
+                                            >
+                                                <strong>{ex.titulo}</strong>
+                                                <Button
+                                                    variant="primary"
+                                                    onClick={() => entrarNoExercicio(ex)}
+                                                >
+                                                    Entrar
+                                                </Button>
+                                            </ListGroup.Item>
+                                        ))}
                                 </ListGroup>
                             </Card.Body>
                         </Card>
@@ -166,10 +228,7 @@ export default function AlunoPage() {
                                     {faseConcluida(f.id) ? (
                                         <span>✅</span>
                                     ) : (
-                                        <Button
-                                            size="sm"
-                                            onClick={() => concluirFase(f.id)}
-                                        >
+                                        <Button size="sm" onClick={() => concluirFase(f.id)}>
                                             Concluir
                                         </Button>
                                     )}
@@ -177,11 +236,7 @@ export default function AlunoPage() {
                             ))}
                         </ListGroup>
 
-                        <Button
-                            variant="warning"
-                            className="mt-3"
-                            onClick={chamarDocente}
-                        >
+                        <Button variant="warning" className="mt-3" onClick={chamarDocente}>
                             Chamar Docente
                         </Button>
                     </Card.Body>

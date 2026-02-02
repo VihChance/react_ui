@@ -1,3 +1,4 @@
+// App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Container, Navbar, Nav, Button } from "react-bootstrap";
 import { useAuth } from "./auth/AuthContext";
@@ -5,14 +6,17 @@ import Login from "./pages/Login";
 import AlunoPage from "./pages/AlunoPage";
 import DocentePage from "./pages/DocentePage";
 
-export default function App() {
-    const { token, role, logout } = useAuth();
 
-    const RotaPrivada = ({ children, roleEsperado }) => {
-        if (!token) return <Navigate to="/" />;
-        if (role !== roleEsperado) return <Navigate to="/" />;
-        return children;
-    };
+function RotaPrivada({ roleEsperado, children }) {
+    const { token, role } = useAuth();
+
+    if (!token) return <Navigate to="/" />;
+    if (role !== roleEsperado) return <Navigate to="/" />;
+    return children;
+}
+
+export default function App() {
+    const { token, logout } = useAuth();
 
     return (
         <>
@@ -51,7 +55,6 @@ export default function App() {
                         }
                     />
 
-                    {/* Fallback: se não encontrar rota, redireciona para / */}
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
             </Container>
