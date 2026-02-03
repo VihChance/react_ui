@@ -95,7 +95,7 @@ export default function AlunoPage() {
 
             const nova = await r.json();
             setParticipacao(nova);
-            // ✅ adiciona a nova participação à lista para atualizar as listas
+            //  adiciona a nova participação à lista para atualizar as listas
             setParticipacoes((prev) => {
                 const jaTem = prev.some(
                     (p) =>
