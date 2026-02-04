@@ -110,25 +110,36 @@ export default function AlunoPage() {
     };
 
     const concluirFase = async (faseId) => {
-        const r = await apiFetch(
-            `/api/participacoes/${participacao.id}/fase/${faseId}/concluir`,
-            { method: "POST" }
-        );
-        if (!r.ok) return setErro("Erro ao concluir fase");
-        setParticipacao((p) => ({
-            ...p,
-            fasesCompletas: [...(p?.fasesCompletas ?? []), faseId],
-        }));
+        try {
+            const r = await apiFetch(
+                `/api/participacoes/${participacao.id}/fase/${faseId}/concluir`,
+                { method: "POST" }
+            );
+            if (!r.ok) throw new Error("Erro ao concluir fase");
+
+            const dto = await r.json();
+            setParticipacao(dto);
+        } catch (e) {
+            setErro(e.message);
+        }
     };
 
+
     const chamarDocente = async () => {
-        const r = await apiFetch(
-            `/api/participacoes/${participacao.id}/chamar-docente`,
-            { method: "POST" }
-        );
-        if (!r.ok) return setErro("Erro ao chamar docente");
-        setParticipacao((p) => ({ ...p, chamado: true }));
+        try {
+            const r = await apiFetch(
+                `/api/participacoes/${participacao.id}/chamar-docente`,
+                { method: "PUT" }   // em vez de POST
+            );
+            if (!r.ok) throw new Error("Erro ao chamar docente");
+
+            const dto = await r.json();
+            setParticipacao(dto);
+        } catch (e) {
+            setErro(e.message);
+        }
     };
+
 
     const faseConcluida = (faseId) =>
         (participacao?.fasesCompletas ?? []).includes(faseId);

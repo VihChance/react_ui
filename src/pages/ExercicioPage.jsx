@@ -81,27 +81,30 @@ export default function ExercicioPage() {
                 { method: "POST" }
             );
             if (!r.ok) throw new Error("Erro ao concluir fase");
-            setParticipacao((p) => ({
-                ...p,
-                fasesCompletas: [...(p?.fasesCompletas ?? []), faseId],
-            }));
+
+            const dto = await r.json();
+            setParticipacao(dto);   // ← usa o ParticipacaoDTO completo
         } catch (e) {
             setErro(e.message);
         }
     };
 
+
     const chamarDocente = async () => {
         try {
             const r = await apiFetch(
                 `/api/participacoes/${participacao.id}/chamar-docente`,
-                { method: "POST" }
+                { method: "PUT" }   // ← agora bate certo
             );
             if (!r.ok) throw new Error("Erro ao chamar docente");
-            setParticipacao((p) => ({ ...p, chamado: true }));
+
+            const dto = await r.json();
+            setParticipacao(dto);   // usa o DTO, já com "chamado" atualizado
         } catch (e) {
             setErro(e.message);
         }
     };
+
 
     return (
         <Container className="mt-4">
@@ -140,6 +143,30 @@ export default function ExercicioPage() {
                                 </ListGroup.Item>
                             ))}
                         </ListGroup>
+
+                        {/* 🔽 ESTADO E NOTA DA PARTICIPAÇÃO */}
+                        {participacao && (
+                            <>
+                                <p className="mt-3">
+                                    Estado:{" "}
+                                    {participacao.terminado ? (
+                                        <span className="text-success">Terminado ✅</span>
+                                    ) : (
+                                        <span className="text-warning">Em progresso</span>
+                                    )}
+                                </p>
+
+                                <p>
+                                    Nota:{" "}
+                                    {participacao.nota != null ? (
+                                        <strong>{participacao.nota}</strong>
+                                    ) : (
+                                        <span className="text-muted">Ainda não atribuída</span>
+                                    )}
+                                </p>
+
+                            </>
+                        )}
 
                         <Button
                             variant={participacao?.chamado ? "secondary" : "warning"}
