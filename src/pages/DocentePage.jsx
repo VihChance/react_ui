@@ -14,8 +14,11 @@ import {
 export default function DocentePage() {
     const [docente, setDocente] = useState(null);
     const [ucs, setUCs] = useState([]);
-    const [ucNome, setUcNome] = useState("");
+    const [ucSelecionada, setUcSelecionada] = useState(null);
+    const [exercicios, setExercicios] = useState([]);
+    const [novoTitulo, setNovoTitulo] = useState("");
     const [erro, setErro] = useState("");
+    const [sucesso, setSucesso] = useState("");
 
     const loadUCs = async () => {
         setErro("");
@@ -25,6 +28,18 @@ export default function DocentePage() {
             setUCs(data);
         } catch {
             setErro("Erro ao carregar UCs");
+        }
+    };
+
+    const loadExerciciosDaUC = async (ucId) => {
+        setErro("");
+        setSucesso("");
+        try {
+            const r = await apiFetch(`/api/exercicios/uc/${ucId}`);
+            const data = await r.json();
+            setExercicios(data);
+        } catch {
+            setErro("Erro ao carregar exercícios da UC");
         }
     };
 
@@ -44,67 +59,148 @@ export default function DocentePage() {
         fetchData();
     }, []);
 
-    const criarUC = async () => {
+    const selecionarUC = async (uc) => {
         setErro("");
-        if (!ucNome.trim()) return setErro("Digite o nome da UC");
+        setSucesso("");
 
-        const r = await apiFetch("/api/ucs", {
-            method: "POST",
-            body: JSON.stringify({ nome: ucNome }),
-        });
+        // clicou de novo ⇒ limpar seleção (toggle)
+        if (ucSelecionada && ucSelecionada.id === uc.id) {
+            setUcSelecionada(null);
+            setExercicios([]);
+            setNovoTitulo("");
+            return;
+        }
 
-        if (!r.ok) return setErro("Erro ao criar UC");
+        // seleciona e carrega exercícios
+        setUcSelecionada(uc);
+        setExercicios([]);
+        setNovoTitulo("");
+        await loadExerciciosDaUC(uc.id);
+    };
 
-        setUcNome("");
-        await loadUCs();
+
+    const criarExercicio = async () => {
+        setErro("");
+        setSucesso("");
+
+        if (!ucSelecionada) {
+            setErro("Selecione uma unidade curricular primeiro.");
+            return;
+        }
+        if (!novoTitulo.trim()) {
+            setErro("Introduza um título para o exercício.");
+            return;
+        }
+
+        try {
+            const r = await apiFetch("/api/exercicios", {
+                method: "POST",
+                body: JSON.stringify({
+                    ucId: ucSelecionada.id,
+                    titulo: novoTitulo,
+                }),
+            });
+
+            if (!r.ok) {
+                const msg = await r.text();
+                throw new Error(msg || "Erro ao criar exercício.");
+            }
+
+            setNovoTitulo("");
+            setSucesso("Exercício criado com sucesso.");
+            await loadExerciciosDaUC(ucSelecionada.id);
+        } catch (e) {
+            setErro(e.message);
+        }
     };
 
     return (
         <Container className="mt-4">
             <h2>Área do Docente</h2>
 
-            {erro && <Alert variant="danger">{erro}</Alert>}
+            {erro && <Alert variant="danger" className="mt-3">{erro}</Alert>}
+            {sucesso && <Alert variant="success" className="mt-3">{sucesso}</Alert>}
 
-            <Card className="mb-4">
+            <Card className="mb-4 mt-3">
                 <Card.Body>
                     <Card.Title>Bem-vindo, {docente?.nome}</Card.Title>
                 </Card.Body>
             </Card>
 
             <Row>
-                <Col md={6}>
-                    <Card className="mb-4">
-                        <Card.Body>
-                            <Card.Title>Criar nova UC</Card.Title>
-                            <Form>
-                                <Form.Group className="mb-3">
-                                    <Form.Control
-                                        placeholder="Nome da UC"
-                                        value={ucNome}
-                                        onChange={(e) => setUcNome(e.target.value)}
-                                    />
-                                </Form.Group>
-                                <Button variant="primary" onClick={criarUC}>
-                                    Criar
-                                </Button>
-                            </Form>
-                        </Card.Body>
-                    </Card>
-                </Col>
-
-                <Col md={6}>
+                {/* Coluna das UCs */}
+                <Col md={4}>
                     <Card className="mb-4">
                         <Card.Body>
                             <Card.Title>Minhas UCs</Card.Title>
                             <ListGroup>
                                 {ucs.map((uc) => (
-                                    <ListGroup.Item key={uc.id}>
-                                        {uc.nome} (id: {uc.id})
+                                    <ListGroup.Item
+                                        key={uc.id}
+                                        className="d-flex justify-content-between align-items-center"
+                                        active={ucSelecionada?.id === uc.id}
+                                    >
+                                        <span>{uc.nome}</span>
+                                        <Button
+                                            size="sm"
+                                            variant="secondary"
+                                            onClick={() => selecionarUC(uc)}
+                                        >
+                                            {ucSelecionada?.id === uc.id ? "Esconder" : "Ver exercícios"}
+                                        </Button>
                                     </ListGroup.Item>
                                 ))}
                             </ListGroup>
                         </Card.Body>
                     </Card>
+                </Col>
+
+                {/* Coluna de exercícios da UC selecionada */}
+                <Col md={8}>
+                    {ucSelecionada ? (
+                        <Card className="mb-4">
+                            <Card.Body>
+                                <Card.Title>
+                                    Exercícios de {ucSelecionada.nome}
+                                </Card.Title>
+
+                                <h6 className="mt-3">Criar novo exercício</h6>
+                                <Form
+                                    className="mb-3"
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        criarExercicio();
+                                    }}
+                                >
+                                    <Form.Group className="mb-3">
+                                        <Form.Control
+                                            placeholder="Título do exercício"
+                                            value={novoTitulo}
+                                            onChange={(e) => setNovoTitulo(e.target.value)}
+                                        />
+                                    </Form.Group>
+                                    <Button type="submit" variant="primary">
+                                        Criar exercício
+                                    </Button>
+                                </Form>
+
+                                <h6 className="mt-4">Lista de exercícios</h6>
+                                {exercicios.length === 0 ? (
+                                    <p>Esta UC ainda não tem exercícios.</p>
+                                ) : (
+                                    <ListGroup>
+                                        {exercicios.map((ex) => (
+                                            <ListGroup.Item key={ex.id}>
+                                                {ex.titulo}
+                                            </ListGroup.Item>
+                                        ))}
+                                    </ListGroup>
+                                )}
+                            </Card.Body>
+                        </Card>
+                    ) : (
+                        <p>Selecione uma unidade curricular para ver ou criar exercícios.</p>
+                    )}
                 </Col>
             </Row>
         </Container>

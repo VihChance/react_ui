@@ -1,4 +1,3 @@
-// App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Container, Navbar, Nav, Button } from "react-bootstrap";
 import { useAuth } from "./auth/AuthContext";
@@ -6,13 +5,7 @@ import Login from "./pages/Login";
 import AlunoPage from "./pages/AlunoPage";
 import DocentePage from "./pages/DocentePage";
 import ExercicioPage from "./pages/ExercicioPage";
-
-function RotaPrivada({ roleEsperado, children }) {
-    const { token, role } = useAuth();
-    if (!token) return <Navigate to="/" />;
-    if (role !== roleEsperado) return <Navigate to="/" />;
-    return children;
-}
+import RotaPrivada from "./RotaPrivada";
 
 export default function App() {
     const { token, logout } = useAuth();
@@ -24,7 +17,9 @@ export default function App() {
                     <Navbar.Brand>Checkpoint System</Navbar.Brand>
                     {token && (
                         <Nav className="ms-auto">
-                            <Button variant="outline-light" onClick={logout}>Sair</Button>
+                            <Button variant="outline-light" onClick={logout}>
+                                Sair
+                            </Button>
                         </Nav>
                     )}
                 </Container>
@@ -32,8 +27,13 @@ export default function App() {
 
             <Container className="mt-4">
                 <Routes>
-                    <Route path="/" element={<Login />} />
+                    /* Raiz redireciona para /login */
+                    <Route path="/" element={<Navigate to="/login" replace />} />
 
+                    /* Login */
+                    <Route path="/login" element={<Login />} />
+
+                    /* Área do aluno */
                     <Route
                         path="/aluno"
                         element={
@@ -43,8 +43,9 @@ export default function App() {
                         }
                     />
 
+
                     <Route
-                        path="/exercicios/:id"   // ⬅️ NOVA ROTA
+                        path="/exercicios/:id"
                         element={
                             <RotaPrivada roleEsperado="ALUNO">
                                 <ExercicioPage />
@@ -61,7 +62,8 @@ export default function App() {
                         }
                     />
 
-                    <Route path="*" element={<Navigate to="/" />} />
+                    /* Qualquer rota inválida */
+                    <Route path="*" element={<Navigate to="/login" replace />} />
                 </Routes>
             </Container>
         </>
