@@ -15,7 +15,7 @@ export default function AlunoPage() {
     const [erro, setErro] = useState("");
     const navigate = useNavigate();
 
-    useEffect(() => {
+ /*   useEffect(() => {
         apiFetch("/api/alunos/me")
             .then((r) => r.json())
             .then((dadosAluno) => {
@@ -30,6 +30,27 @@ export default function AlunoPage() {
             .then((r) => r.json())
             .then(setUcs)
             .catch(() => setErro("Erro ao carregar UCs"));
+    }, []);
+*/
+    useEffect(() => {
+        (async () => {
+            try {
+                const alunoResp = await apiFetch("/api/alunos/me");
+                const dadosAluno = await alunoResp.json();
+                setAluno(dadosAluno);
+
+                const [partsResp, ucsResp] = await Promise.all([
+                    apiFetch(`/api/participacoes/aluno/${dadosAluno.id}`),
+                    apiFetch("/api/ucs/minhas"),   // ⬅apenas UCs deste aluno
+                ]);
+
+                setParticipacoes(await partsResp.json());
+                setUcs(await ucsResp.json());
+            } catch (e) {
+                console.error(e);
+                setErro(e.message || "Erro ao carregar dados do aluno ou UCs");
+            }
+        })();
     }, []);
 
     const selecionarUC = async (uc) => {
