@@ -199,7 +199,7 @@ export default function AlunoPage() {
                     }
                 }
                 const msg = await r.text();
-                setErro(msg || "Erro ao entrar no exercício.");
+                setErro(msg || "Exercicio terminado.");
                 return;
             }
 

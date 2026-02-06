@@ -286,6 +286,73 @@ export default function DocentePage() {
     };
 
 
+    const terminarParticipacao = async (participacaoId) => {
+        try {
+            setErro("");
+
+            const r = await apiFetch(
+                `/api/participacoes/${participacaoId}/terminar`,
+                { method: "PUT" }
+            );
+
+            if (!r.ok) {
+                const msg = await r.text();
+                throw new Error(msg || "Erro ao terminar exercício.");
+            }
+
+            const dto = await r.json(); // ParticipacaoDTO com terminado=true
+
+            // Atualiza o dashboard local
+            setDashboard((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    progresso: prev.progresso.map((linha) =>
+                        linha.participacaoId === participacaoId
+                            ? { ...linha, terminado: dto.terminado }
+                            : linha
+                    ),
+                };
+            });
+        } catch (e) {
+            setErro(e.message);
+        }
+    };
+
+    const encerrarExercicio = async () => {
+        if (!exSelecionado) return;
+
+        if (!window.confirm("Tem a certeza que pretende encerrar este exercício?")) {
+            return;
+        }
+
+        try {
+            setErro("");
+            const r = await apiFetch(`/api/exercicios/${exSelecionado.id}/encerrar`, {
+                method: "PUT",
+            });
+
+            if (!r.ok) {
+                const msg = await r.text();
+                throw new Error(msg || "Erro ao encerrar exercício.");
+            }
+
+            const ex = await r.json(); // Exercicio vindo do backend, com 'encerrado'
+
+            // Atualiza o exercício selecionado e a lista
+            setExSelecionado(ex);
+            setExercicios((lista) =>
+                lista.map((e) => (e.id === ex.id ? ex : e))
+            );
+
+            setSucesso("Exercício encerrado com sucesso.");
+        } catch (e) {
+            setErro(e.message);
+        }
+    };
+
+
+
 
     return (
         <Container className="mt-4">
@@ -388,11 +455,29 @@ export default function DocentePage() {
                                 {/* Gestão de fases do exercício selecionado */}
                                 {exSelecionado && (
                                     <>
-                                        <h5 className="mt-3">
-                                            Fases do exercício: {exSelecionado.titulo}
-                                        </h5>
+                                        {/* Título + botão/estado do exercício */}
+                                        <div className="d-flex justify-content-between align-items-center mt-3">
+                                            <h5 className="mb-0">
+                                                Fases do exercício: {exSelecionado.titulo}
+                                            </h5>
 
-                                        <ListGroup as="ol" numbered className="mb-3">
+                                            {exSelecionado.encerrado ? (
+                                                <span className="badge bg-danger">
+                    Exercício encerrado
+                </span>
+                                            ) : (
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline-danger"
+                                                    onClick={encerrarExercicio}
+                                                >
+                                                    Terminar exercício
+                                                </Button>
+                                            )}
+                                        </div>
+
+                                        {/* Lista de fases */}
+                                        <ListGroup as="ol" numbered className="mb-3 mt-2">
                                             {fases.length === 0 && (
                                                 <ListGroup.Item>
                                                     Ainda não existem fases para este exercício.
@@ -402,46 +487,49 @@ export default function DocentePage() {
                                                 <ListGroup.Item as="li" key={f.id}>
                                                     [{f.ordem}] {f.titulo}
                                                 </ListGroup.Item>
-                                                ))}
+                                            ))}
                                         </ListGroup>
 
-
-                                        <h6>Criar nova fase</h6>
-                                        <Form
-                                            className="mb-3"
-                                            onSubmit={(e) => {
-                                                e.preventDefault();
-                                                criarFase();
-                                            }}
-                                        >
-                                            <Form.Group className="mb-2">
-                                                <Form.Label>Título da fase</Form.Label>
-                                                <Form.Control
-                                                    placeholder=""
-                                                    value={novoTituloFase}
-                                                    onChange={(e) =>
-                                                        setNovoTituloFase(e.target.value)
-                                                    }
-                                                />
-                                            </Form.Group>
-                                            <Form.Group className="mb-2">
-                                                <Form.Label>Ordem</Form.Label>
-                                                <Form.Control
-                                                    type="number"
-                                                    min="1"
-                                                    placeholder=""
-                                                    value={novaOrdemFase}
-                                                    onChange={(e) =>
-                                                        setNovaOrdemFase(e.target.value)
-                                                    }
-                                                />
-                                            </Form.Group>
-                                            <Button type="submit" variant="success">
-                                                Adicionar fase
-                                            </Button>
-                                        </Form>
+                                        {/* Criar nova fase – só se o exercício ainda NÃO estiver encerrado */}
+                                        {!exSelecionado.encerrado && (
+                                            <>
+                                                <h6>Criar nova fase</h6>
+                                                <Form
+                                                    className="mb-3"
+                                                    onSubmit={(e) => {
+                                                        e.preventDefault();
+                                                        criarFase();
+                                                    }}
+                                                >
+                                                    <Form.Group className="mb-2">
+                                                        <Form.Label>Título da fase</Form.Label>
+                                                        <Form.Control
+                                                            value={novoTituloFase}
+                                                            onChange={(e) =>
+                                                                setNovoTituloFase(e.target.value)
+                                                            }
+                                                        />
+                                                    </Form.Group>
+                                                    <Form.Group className="mb-2">
+                                                        <Form.Label>Ordem</Form.Label>
+                                                        <Form.Control
+                                                            type="number"
+                                                            min="1"
+                                                            value={novaOrdemFase}
+                                                            onChange={(e) =>
+                                                                setNovaOrdemFase(e.target.value)
+                                                            }
+                                                        />
+                                                    </Form.Group>
+                                                    <Button type="submit" variant="success">
+                                                        Adicionar fase
+                                                    </Button>
+                                                </Form>
+                                            </>
+                                        )}
                                     </>
                                 )}
+
 
                                 {/* Dashboard de progresso dos estudantes */}
                                 {dashboard && (
@@ -491,12 +579,23 @@ export default function DocentePage() {
 
                                                             {/* Em que passo vai */}
                                                             <td>
-                                                                {p.totalFases === 0
-                                                                    ? "Sem fases"
-                                                                    : p.terminado
-                                                                        ? `Concluído (${p.fasesConcluidas}/${p.totalFases})`
-                                                                        : `Fase ${p.faseAtual} de ${p.totalFases}`}
+                                                                {p.totalFases === 0 ? (
+                                                                    // Exercício sem fases definidas
+                                                                    <span className="text-muted">Sem fases</span>
+                                                                ) : p.terminado ? (
+                                                                    // Aluno marcou todas as fases concluídas (terminado = true)
+                                                                    <span className="text-success">Concluído</span>
+                                                                    // se preferires "Terminado":
+                                                                    // <span className="text-success">Terminado</span>
+                                                                ) : p.fasesConcluidas === p.totalFases ? (
+                                                                    // Todas as fases feitas mas ainda sem "terminado" / sem nota
+                                                                    <span className="text-warning">Concluído (sem nota)</span>
+                                                                ) : (
+                                                                    // Ainda a meio do exercício
+                                                                    <span className="text-warning">Em progresso</span>
+                                                                )}
                                                             </td>
+
 
                                                             <td style={{ minWidth: "180px" }}>
                                                                 {p.nota != null ? (
@@ -532,7 +631,29 @@ export default function DocentePage() {
                                                             </td>
 
 
-                                                            <td>{p.terminado ? "Terminado" : "Em progresso"}</td>
+                                                            <td>
+                                                                {p.terminado && p.nota != null ? (
+                                                                    // Terminado MESMO: docente já deu nota e marcou como terminado
+                                                                    <span className="text-success">Terminado</span>
+                                                                ) : p.nota != null ? (
+                                                                    // Já tem nota mas o docente ainda não terminou oficialmente
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="outline-success"
+                                                                        onClick={() => terminarParticipacao(p.participacaoId)}
+                                                                    >
+                                                                        Terminar
+                                                                    </Button>
+                                                                ) : p.fasesConcluidas === p.totalFases ? (
+                                                                    // Aluno acabou as fases, mas falta avaliação
+                                                                    <span className="text-warning">Concluído (sem nota)</span>
+                                                                ) : (
+                                                                    // Ainda está a meio do exercício
+                                                                    <span className="text-warning">Em progresso</span>
+                                                                )}
+                                                            </td>
+
+
                                                             <td>{p.chamado ? "Sim" : "Não"}</td>
                                                         </tr>
                                                     ))
