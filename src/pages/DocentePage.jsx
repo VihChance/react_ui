@@ -15,15 +15,23 @@ export default function DocentePage() {
     const [docente, setDocente] = useState(null);
     const [ucs, setUCs] = useState([]);
     const [ucSelecionada, setUcSelecionada] = useState(null);
+
     const [exercicios, setExercicios] = useState([]);
     const [novoTitulo, setNovoTitulo] = useState("");
+
+    // 👇 NOVO – gestão de fases
+    const [exSelecionado, setExSelecionado] = useState(null);
+    const [fases, setFases] = useState([]);
+    const [novoTituloFase, setNovoTituloFase] = useState("");
+    const [novaOrdemFase, setNovaOrdemFase] = useState("");
+
     const [erro, setErro] = useState("");
     const [sucesso, setSucesso] = useState("");
 
     const loadUCs = async () => {
         setErro("");
         try {
-            const r = await apiFetch("/api/ucs");
+            const r = await apiFetch("/api/ucs"); // DOCENTE vê só as suas UCs
             const data = await r.json();
             setUCs(data);
         } catch {
@@ -68,6 +76,8 @@ export default function DocentePage() {
             setUcSelecionada(null);
             setExercicios([]);
             setNovoTitulo("");
+            setExSelecionado(null);
+            setFases([]);
             return;
         }
 
@@ -75,9 +85,11 @@ export default function DocentePage() {
         setUcSelecionada(uc);
         setExercicios([]);
         setNovoTitulo("");
+        setExSelecionado(null);
+        setFases([]);
+
         await loadExerciciosDaUC(uc.id);
     };
-
 
     const criarExercicio = async () => {
         setErro("");
@@ -111,6 +123,78 @@ export default function DocentePage() {
             await loadExerciciosDaUC(ucSelecionada.id);
         } catch (e) {
             setErro(e.message);
+        }
+    };
+
+    // 👇 NOVO: selecionar um exercício para gerir fases
+    const selecionarExercicio = async (ex) => {
+        setErro("");
+        setSucesso("");
+
+        // toggle: se clicar de novo no mesmo exercício, desmarca
+        if (exSelecionado && exSelecionado.id === ex.id) {
+            setExSelecionado(null);
+            setFases([]);
+            setNovoTituloFase("");
+            setNovaOrdemFase("");
+            return;
+        }
+
+        setExSelecionado(ex);
+        setFases([]);
+        setNovoTituloFase("");
+        setNovaOrdemFase("");
+
+        try {
+            const r = await apiFetch(`/api/fases/exercicio/${ex.id}`);
+            const lista = await r.json();
+            setFases(lista);
+        } catch {
+            setErro("Erro ao carregar fases do exercício.");
+        }
+    };
+
+    // 👇 NOVO: criar fase para o exercício selecionado
+    const criarFase = async () => {
+        setErro("");
+        setSucesso("");
+
+        if (!exSelecionado) {
+            setErro("Selecione um exercício para criar fases.");
+            return;
+        }
+        if (!novoTituloFase.trim()) {
+            setErro("Introduza um título para a fase.");
+            return;
+        }
+        if (!novaOrdemFase) {
+            setErro("Introduza a ordem (número) da fase.");
+            return;
+        }
+
+        try {
+            const r = await apiFetch("/api/fases", {
+                method: "POST",
+                body: JSON.stringify({
+                    exercicioId: exSelecionado.id,
+                    titulo: novoTituloFase,
+                    ordem: Number(novaOrdemFase),
+                }),
+            });
+
+            if (!r.ok) {
+                const msg = await r.text();
+                throw new Error(msg || "Erro ao criar fase.");
+            }
+
+            setNovoTituloFase("");
+            setNovaOrdemFase("");
+            setSucesso("Fase criada com sucesso.");
+
+            const r2 = await apiFetch(`/api/fases/exercicio/${exSelecionado.id}`);
+            setFases(await r2.json());
+        } catch (e) {
+            setErro(e.message || "Erro ao criar fase.");
         }
     };
 
@@ -164,6 +248,7 @@ export default function DocentePage() {
                                     Exercícios de {ucSelecionada.nome}
                                 </Card.Title>
 
+                                {/* Criar novo exercício */}
                                 <h6 className="mt-3">Criar novo exercício</h6>
                                 <Form
                                     className="mb-3"
@@ -184,17 +269,88 @@ export default function DocentePage() {
                                     </Button>
                                 </Form>
 
+                                {/* Lista de exercícios */}
                                 <h6 className="mt-4">Lista de exercícios</h6>
                                 {exercicios.length === 0 ? (
                                     <p>Esta UC ainda não tem exercícios.</p>
                                 ) : (
-                                    <ListGroup>
+                                    <ListGroup className="mb-4">
                                         {exercicios.map((ex) => (
-                                            <ListGroup.Item key={ex.id}>
-                                                {ex.titulo}
+                                            <ListGroup.Item
+                                                key={ex.id}
+                                                className="d-flex justify-content-between align-items-center"
+                                                active={exSelecionado?.id === ex.id}
+                                            >
+                                                <span>{ex.titulo}</span>
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline-secondary"
+                                                    onClick={() => selecionarExercicio(ex)}
+                                                >
+                                                    {exSelecionado?.id === ex.id
+                                                        ? "Esconder fases"
+                                                        : "Gerir fases"}
+                                                </Button>
                                             </ListGroup.Item>
                                         ))}
                                     </ListGroup>
+                                )}
+
+                                {/* Gestão de fases do exercício selecionado */}
+                                {exSelecionado && (
+                                    <>
+                                        <h5 className="mt-3">
+                                            Fases do exercício: {exSelecionado.titulo}
+                                        </h5>
+
+                                        <ListGroup as="ol" numbered className="mb-3">
+                                            {fases.length === 0 && (
+                                                <ListGroup.Item>
+                                                    Ainda não existem fases para este exercício.
+                                                </ListGroup.Item>
+                                            )}
+                                            {fases.map((f) => (
+                                                <ListGroup.Item as="li" key={f.id}>
+                                                    [{f.ordem}] {f.titulo}
+                                                </ListGroup.Item>
+                                            ))}
+                                        </ListGroup>
+
+                                        <h6>Criar nova fase</h6>
+                                        <Form
+                                            className="mb-3"
+                                            onSubmit={(e) => {
+                                                e.preventDefault();
+                                                criarFase();
+                                            }}
+                                        >
+                                            <Form.Group className="mb-2">
+                                                <Form.Label>Título da fase</Form.Label>
+                                                <Form.Control
+                                                    placeholder=""
+                                                    value={novoTituloFase}
+                                                    onChange={(e) =>
+                                                        setNovoTituloFase(e.target.value)
+                                                    }
+                                                />
+                                            </Form.Group>
+                                            <Form.Group className="mb-2">
+                                                <Form.Label>Ordem</Form.Label>
+                                                <Form.Control
+                                                    type="number"
+                                                    min="1"
+                                                    placeholder=""
+                                                    value={novaOrdemFase}
+                                                    onChange={(e) =>
+                                                        setNovaOrdemFase(e.target.value)
+                                                    }
+                                                />
+                                            </Form.Group>
+                                            <Button type="submit" variant="success">
+                                                Adicionar fase
+                                            </Button>
+                                        </Form>
+                                    </>
                                 )}
                             </Card.Body>
                         </Card>
