@@ -9,7 +9,11 @@ export default defineConfig({
         target: 'http://localhost:8080', // porta do Spring Boot
         changeOrigin: true,
         secure: false,
-
+      },
+      '/ws': {
+        target: 'http://localhost:8080',
+        ws: true,          // importante para WebSocket
+        changeOrigin: true,
       },
     },
   },

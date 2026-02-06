@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api";
 import { Container, Row, Col, Card, Button, ListGroup, Alert } from "react-bootstrap";
 import { useNavigate } from "react-router-dom";
+import SockJS from "sockjs-client";
+import Stomp from "stompjs";
+
 
 export default function AlunoPage() {
     const [aluno, setAluno] = useState(null);
@@ -15,7 +18,7 @@ export default function AlunoPage() {
     const [erro, setErro] = useState("");
     const navigate = useNavigate();
 
-    // 🚀 Carrega aluno, participações e UCs deste aluno
+    //  Carrega aluno, participações e UCs deste aluno
     useEffect(() => {
         (async () => {
             try {
@@ -36,7 +39,8 @@ export default function AlunoPage() {
         })();
     }, []);
 
-    // ⏱️ POLLING: sempre que houver UC selecionada, atualiza exercícios de X em X segundos
+    /*
+    // POLLING: sempre que houver UC selecionada, atualiza exercícios de X em X segundos
     useEffect(() => {
         if (!ucSelecionada) return;
 
@@ -69,8 +73,43 @@ export default function AlunoPage() {
             clearInterval(intervalId);
         };
     }, [ucSelecionada]);
+    */
 
-    // ➤ Selecionar UC (agora só trata de estado; o fetch fica no useEffect acima)
+    useEffect(() => {
+        if (!ucSelecionada) return;
+
+        const socket = new SockJS("/ws");
+        const stompClient = Stomp.over(socket);
+
+        // opcional: desligar logs
+        stompClient.debug = () => {};
+
+        stompClient.connect({}, () => {
+            const topic = `/topic/exercicios.uc.${ucSelecionada.id}`;
+
+            stompClient.subscribe(topic, (message) => {
+                try {
+                    const body = JSON.parse(message.body);
+
+                    setExercicios((prev) => {
+                        const jaExiste = prev.some((ex) => ex.id === body.id);
+                        if (jaExiste) return prev;
+                        return [...prev, { id: body.id, titulo: body.titulo }];
+                    });
+                } catch (err) {
+                    console.error("Erro ao processar mensagem WebSocket:", err);
+                }
+            });
+        });
+
+        // cleanup ao trocar de UC ou desmontar componente
+        return () => {
+            if (stompClient && stompClient.connected) {
+                stompClient.disconnect();
+            }
+        };
+    }, [ucSelecionada, setExercicios]);
+
     const selecionarUC = (uc) => {
         setErro("");
         setUcSelecionada((anterior) =>
