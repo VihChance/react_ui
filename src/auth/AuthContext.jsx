@@ -3,18 +3,19 @@ import { createContext, useContext, useState } from 'react';
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-    const [token, setToken] = useState(localStorage.getItem('token'));
-    const [role, setRole] = useState(localStorage.getItem('role'));
+    const [token, setToken] = useState(sessionStorage.getItem('token'));
+    const [role, setRole] = useState(sessionStorage.getItem('role'));
 
     const login = (token, role) => {
-        localStorage.setItem('token', token);
-        localStorage.setItem('role', role);
+        sessionStorage.setItem('token', token);
+        sessionStorage.setItem('role', role);
         setToken(token);
         setRole(role);
     };
 
     const logout = () => {
-        localStorage.clear();
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('role');
         setToken(null);
         setRole(null);
     };

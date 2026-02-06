@@ -15,23 +15,7 @@ export default function AlunoPage() {
     const [erro, setErro] = useState("");
     const navigate = useNavigate();
 
- /*   useEffect(() => {
-        apiFetch("/api/alunos/me")
-            .then((r) => r.json())
-            .then((dadosAluno) => {
-                setAluno(dadosAluno);
-                return apiFetch(`/api/participacoes/aluno/${dadosAluno.id}`);
-            })
-            .then((r) => r.json())
-            .then(setParticipacoes)
-            .catch(() => setErro("Erro ao carregar aluno ou participações"));
-
-        apiFetch("/api/ucs/todas")
-            .then((r) => r.json())
-            .then(setUcs)
-            .catch(() => setErro("Erro ao carregar UCs"));
-    }, []);
-*/
+    // 🚀 Carrega aluno, participações e UCs deste aluno
     useEffect(() => {
         (async () => {
             try {
@@ -41,34 +25,68 @@ export default function AlunoPage() {
 
                 const [partsResp, ucsResp] = await Promise.all([
                     apiFetch(`/api/participacoes/aluno/${dadosAluno.id}`),
-                    apiFetch("/api/ucs/minhas"),   // ⬅apenas UCs deste aluno
+                    apiFetch("/api/ucs/minhas"),   // apenas UCs deste aluno
                 ]);
 
                 setParticipacoes(await partsResp.json());
                 setUcs(await ucsResp.json());
-            } catch (e) {
-                console.error(e);
-                setErro(e.message || "Erro ao carregar dados do aluno ou UCs");
+            } catch {
+                setErro("Erro ao carregar dados do aluno ou UCs");
             }
         })();
     }, []);
 
-    const selecionarUC = async (uc) => {
+    // ⏱️ POLLING: sempre que houver UC selecionada, atualiza exercícios de X em X segundos
+    useEffect(() => {
+        if (!ucSelecionada) return;
+
+        let cancelado = false;
+
+        const carregarExercicios = async () => {
+            try {
+                const r = await apiFetch(`/api/exercicios/uc/${ucSelecionada.id}`);
+                if (!r.ok) throw new Error();
+                const data = await r.json();
+                if (!cancelado) {
+                    setExercicios(data);
+                }
+            } catch {
+                if (!cancelado) {
+                    setErro("Erro ao atualizar lista de exercícios.");
+                }
+            }
+        };
+
+        // carrega logo uma vez ao selecionar
+        carregarExercicios();
+
+        // depois cria o intervalo (por ex. 5 segundos)
+        const intervalId = setInterval(carregarExercicios, 5000);
+
+        // cleanup ao mudar de UC ou sair da página
+        return () => {
+            cancelado = true;
+            clearInterval(intervalId);
+        };
+    }, [ucSelecionada]);
+
+    // ➤ Selecionar UC (agora só trata de estado; o fetch fica no useEffect acima)
+    const selecionarUC = (uc) => {
         setErro("");
-        setUcSelecionada(uc);
+        setUcSelecionada((anterior) =>
+            anterior && anterior.id === uc.id ? null : uc
+        );
         setExSelecionado(null);
         setFases([]);
         setParticipacao(null);
-
-        const r = await apiFetch(`/api/exercicios/uc/${uc.id}`);
-        setExercicios(await r.json());
+        setExercicios([]);
     };
 
-    // IDs de exercícios que já têm participação (string para evitar number vs string)
+    // IDs de exercícios que já têm participação
     const iniciadosIds = useMemo(() => {
         const ids = new Set();
         for (const p of participacoes || []) {
-            const id = p?.exercicio?.id ?? p?.exercicioId; // cobre dois formatos
+            const id = p?.exercicio?.id ?? p?.exercicioId;
             if (id != null) ids.add(String(id));
         }
         return ids;
@@ -95,14 +113,16 @@ export default function AlunoPage() {
                     const lista = await apiFetch(`/api/participacoes/aluno/${aluno.id}`);
                     const todas = await lista.json();
                     const existente = todas.find(
-                        (p) => String(p?.exercicio?.id ?? p?.exercicioId) === String(ex.id)
+                        (p) =>
+                            String(p?.exercicio?.id ?? p?.exercicioId) === String(ex.id)
                     );
                     if (existente) {
                         setParticipacao(existente);
-                        // 🔁 garante estado visual correto:
                         setParticipacoes((prev) => {
                             const jaTem = prev.some(
-                                (p) => String(p?.exercicio?.id ?? p?.exercicioId) === String(ex.id)
+                                (p) =>
+                                    String(p?.exercicio?.id ?? p?.exercicioId) ===
+                                    String(ex.id)
                             );
                             return jaTem ? prev : [...prev, existente];
                         });
@@ -116,7 +136,6 @@ export default function AlunoPage() {
 
             const nova = await r.json();
             setParticipacao(nova);
-            //  adiciona a nova participação à lista para atualizar as listas
             setParticipacoes((prev) => {
                 const jaTem = prev.some(
                     (p) =>
@@ -145,12 +164,11 @@ export default function AlunoPage() {
         }
     };
 
-
     const chamarDocente = async () => {
         try {
             const r = await apiFetch(
                 `/api/participacoes/${participacao.id}/chamar-docente`,
-                { method: "PUT" }   // em vez de POST
+                { method: "PUT" }
             );
             if (!r.ok) throw new Error("Erro ao chamar docente");
 
@@ -160,7 +178,6 @@ export default function AlunoPage() {
             setErro(e.message);
         }
     };
-
 
     const faseConcluida = (faseId) =>
         (participacao?.fasesCompletas ?? []).includes(faseId);
@@ -178,14 +195,20 @@ export default function AlunoPage() {
                             <Card.Title>Unidades Curriculares</Card.Title>
                             <ListGroup>
                                 {ucs.map((uc) => (
-                                    <ListGroup.Item key={uc.id}>
+                                    <ListGroup.Item
+                                        key={uc.id}
+                                        className="d-flex justify-content-between align-items-center"
+                                        active={ucSelecionada?.id === uc.id}
+                                    >
                                         {uc.nome}
                                         <Button
                                             size="sm"
                                             className="float-end"
                                             onClick={() => selecionarUC(uc)}
                                         >
-                                            Ver Exercícios
+                                            {ucSelecionada?.id === uc.id
+                                                ? "Esconder"
+                                                : "Ver Exercícios"}
                                         </Button>
                                     </ListGroup.Item>
                                 ))}
@@ -212,7 +235,9 @@ export default function AlunoPage() {
                                                 <strong>{ex.titulo}</strong>
                                                 <Button
                                                     variant="secondary"
-                                                    onClick={() => navigate(`/exercicios/${ex.id}`)}
+                                                    onClick={() =>
+                                                        navigate(`/exercicios/${ex.id}`)
+                                                    }
                                                 >
                                                     Ver
                                                 </Button>
@@ -258,7 +283,7 @@ export default function AlunoPage() {
                                 >
                                     [{f.ordem}] {f.titulo}
                                     {faseConcluida(f.id) ? (
-                                        <span>✅</span>
+                                        <span>✔</span>
                                     ) : (
                                         <Button size="sm" onClick={() => concluirFase(f.id)}>
                                             Concluir
@@ -268,8 +293,15 @@ export default function AlunoPage() {
                             ))}
                         </ListGroup>
 
-                        <Button variant="warning" className="mt-3" onClick={chamarDocente}>
-                            Chamar Docente
+                        <Button
+                            variant={participacao?.chamado ? "secondary" : "warning"}
+                            className="mt-3"
+                            onClick={chamarDocente}
+                            disabled={participacao?.chamado}
+                        >
+                            {participacao?.chamado
+                                ? "Docente já chamado"
+                                : "Chamar Docente"}
                         </Button>
                     </Card.Body>
                 </Card>
