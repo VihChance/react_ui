@@ -27,6 +27,9 @@ export default function DocentePage() {
 
     const [erro, setErro] = useState("");
     const [sucesso, setSucesso] = useState("");
+    const [dashboard, setDashboard] = useState(null);
+    const [notaEdicao, setNotaEdicao] = useState({});
+
 
     const loadUCs = async () => {
         setErro("");
@@ -66,6 +69,8 @@ export default function DocentePage() {
 
         fetchData();
     }, []);
+
+
 
     const selecionarUC = async (uc) => {
         setErro("");
@@ -126,7 +131,7 @@ export default function DocentePage() {
         }
     };
 
-    // 👇 NOVO: selecionar um exercício para gerir fases
+    // selecionar um exercício para gerir fases
     const selecionarExercicio = async (ex) => {
         setErro("");
         setSucesso("");
@@ -137,6 +142,7 @@ export default function DocentePage() {
             setFases([]);
             setNovoTituloFase("");
             setNovaOrdemFase("");
+            setDashboard(null);
             return;
         }
 
@@ -144,17 +150,20 @@ export default function DocentePage() {
         setFases([]);
         setNovoTituloFase("");
         setNovaOrdemFase("");
+        setDashboard(null);
 
         try {
             const r = await apiFetch(`/api/fases/exercicio/${ex.id}`);
             const lista = await r.json();
             setFases(lista);
+
+            await carregarDashboard(ex.id);
         } catch {
             setErro("Erro ao carregar fases do exercício.");
         }
     };
 
-    // 👇 NOVO: criar fase para o exercício selecionado
+    // criar fase para o exercício selecionado
     const criarFase = async () => {
         setErro("");
         setSucesso("");
@@ -197,6 +206,86 @@ export default function DocentePage() {
             setErro(e.message || "Erro ao criar fase.");
         }
     };
+
+
+    const carregarDashboard = async (exercicioId) => {
+        try {
+            const r = await apiFetch(`/api/dashboard/${exercicioId}`);
+            if (!r.ok) {
+                throw new Error("Erro ao carregar progresso dos estudantes.");
+            }
+            const data = await r.json();
+            setDashboard(data);   // data.exercicio + data.progresso
+        } catch (e) {
+            setErro(e.message);
+            setDashboard(null);
+        }
+    };
+
+    const atribuirNota = async (participacaoId) => {
+        try {
+            const valor = notaEdicao[participacaoId];
+
+            if (valor === undefined || valor === "") {
+                setErro("Introduza uma nota antes de guardar.");
+                return;
+            }
+
+            const notaNumerica = Number(valor);
+            if (Number.isNaN(notaNumerica)) {
+                setErro("A nota tem de ser um número.");
+                return;
+            }
+
+            // Exemplo: escala 0–20, ajusta se for outra
+            if (notaNumerica < 0 || notaNumerica > 20) {
+                setErro("A nota deve estar entre 0 e 20.");
+                return;
+            }
+
+            setErro("");
+
+            const r = await apiFetch(
+                `/api/participacoes/${participacaoId}/atribuir-nota?nota=${notaNumerica}`,
+                { method: "PUT" }
+            );
+
+            if (!r.ok) {
+                const msg = await r.text();
+                throw new Error(msg || "Erro ao atribuir nota.");
+            }
+
+            const dto = await r.json(); // ParticipacaoDTO com nota e terminado=true
+
+            // Atualiza o dashboard local (nota + estado terminado)
+            setDashboard((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    progresso: prev.progresso.map((linha) =>
+                        linha.participacaoId === participacaoId
+                            ? {
+                                ...linha,
+                                nota: dto.nota,
+                                terminado: dto.terminado,
+                            }
+                            : linha
+                    ),
+                };
+            });
+
+            // limpa o input dessa participação
+            setNotaEdicao((prev) => {
+                const copia = { ...prev };
+                delete copia[participacaoId];
+                return copia;
+            });
+        } catch (e) {
+            setErro(e.message);
+        }
+    };
+
+
 
     return (
         <Container className="mt-4">
@@ -313,8 +402,9 @@ export default function DocentePage() {
                                                 <ListGroup.Item as="li" key={f.id}>
                                                     [{f.ordem}] {f.titulo}
                                                 </ListGroup.Item>
-                                            ))}
+                                                ))}
                                         </ListGroup>
+
 
                                         <h6>Criar nova fase</h6>
                                         <Form
@@ -352,12 +442,119 @@ export default function DocentePage() {
                                         </Form>
                                     </>
                                 )}
+
+                                {/* Dashboard de progresso dos estudantes */}
+                                {dashboard && (
+                                    <>
+                                        <h5 className="mt-4">
+                                            Progresso dos estudantes ({dashboard.exercicio})
+                                        </h5>
+
+                                        <div className="table-responsive">
+                                            <table className="table align-middle">
+                                                <thead>
+                                                <tr>
+                                                    <th>Aluno</th>
+                                                    <th style={{ width: "35%" }}>Progresso</th>
+                                                    <th>Fase atual</th>
+                                                    <th>Nota</th>
+                                                    <th>Estado</th>
+                                                    <th>Chamou docente?</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                {dashboard.progresso && dashboard.progresso.length > 0 ? (
+                                                    dashboard.progresso.map((p, idx) => (
+                                                        <tr key={idx}>
+                                                            <td>{p.aluno}</td>
+
+                                                            {/* Barra de progresso */}
+                                                            <td>
+                                                                <div className="progress">
+                                                                    <div
+                                                                        className={
+                                                                            "progress-bar " +
+                                                                            (p.terminado
+                                                                                ? "bg-success"
+                                                                                : "bg-info")
+                                                                        }
+                                                                        role="progressbar"
+                                                                        style={{ width: `${p.percentagem}%` }}
+                                                                        aria-valuenow={p.percentagem}
+                                                                        aria-valuemin="0"
+                                                                        aria-valuemax="100"
+                                                                    >
+                                                                        {p.percentagem}%
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+
+                                                            {/* Em que passo vai */}
+                                                            <td>
+                                                                {p.totalFases === 0
+                                                                    ? "Sem fases"
+                                                                    : p.terminado
+                                                                        ? `Concluído (${p.fasesConcluidas}/${p.totalFases})`
+                                                                        : `Fase ${p.faseAtual} de ${p.totalFases}`}
+                                                            </td>
+
+                                                            <td style={{ minWidth: "180px" }}>
+                                                                {p.nota != null ? (
+                                                                    // Se já tem nota, apenas mostra
+                                                                    <strong>{p.nota}</strong>
+                                                                ) : (
+                                                                    // Se ainda não tem nota, deixa o docente escrever e guardar
+                                                                    <div className="d-flex align-items-center gap-2">
+                                                                        <Form.Control
+                                                                            size="sm"
+                                                                            type="number"
+                                                                            step="0.1"
+                                                                            min="0"
+                                                                            max="20"
+                                                                            placeholder="Nota"
+                                                                            value={notaEdicao[p.participacaoId] ?? ""}
+                                                                            onChange={(e) =>
+                                                                                setNotaEdicao((prev) => ({
+                                                                                    ...prev,
+                                                                                    [p.participacaoId]: e.target.value,
+                                                                                }))
+                                                                            }
+                                                                        />
+                                                                        <Button
+                                                                            size="sm"
+                                                                            variant="success"
+                                                                            onClick={() => atribuirNota(p.participacaoId)}
+                                                                        >
+                                                                            Guardar
+                                                                        </Button>
+                                                                    </div>
+                                                                )}
+                                                            </td>
+
+
+                                                            <td>{p.terminado ? "Terminado" : "Em progresso"}</td>
+                                                            <td>{p.chamado ? "Sim" : "Não"}</td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan={6}>
+                                                            Ainda não há participações neste exercício.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                )}
                             </Card.Body>
                         </Card>
                     ) : (
-                        <p>Selecione uma unidade curricular para ver ou criar exercícios.</p>
+                        <p>Selecione uma UC para ver os exercícios.</p>
                     )}
                 </Col>
+
             </Row>
         </Container>
     );

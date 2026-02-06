@@ -39,6 +39,36 @@ export default function AlunoPage() {
         })();
     }, []);
 
+    // 2) Quando escolho uma UC, faço o FETCH inicial dos exercícios dessa UC
+    useEffect(() => {
+        if (!ucSelecionada) {
+            setExercicios([]);
+            return;
+        }
+
+        let cancelado = false;
+
+        (async () => {
+            try {
+                const r = await apiFetch(`/api/exercicios/uc/${ucSelecionada.id}`);
+                if (!r.ok) throw new Error();
+                const data = await r.json();
+                if (!cancelado) {
+                    setExercicios(data);
+                }
+            } catch {
+                if (!cancelado) {
+                    setErro("Erro ao carregar exercícios da unidade curricular.");
+                }
+            }
+        })();
+
+        return () => {
+            cancelado = true;
+        };
+    }, [ucSelecionada]);
+
+
     /*
     // POLLING: sempre que houver UC selecionada, atualiza exercícios de X em X segundos
     useEffect(() => {
